@@ -5,11 +5,9 @@ Created on Sun Apr 30 20:26:43 2017
 @author: Jan Fait, jan.fait@mapp.com
 """
 
-import os
 import time
 import requests
 import datetime
-import pandas
 
 
 class InvalidCredentialsException(Exception):
@@ -19,7 +17,7 @@ class MissingCredentialsException(Exception):
     def __init__(self, message): self.message = message
 
 class MissingParameterException(Exception):
-    def __init__(self, name): self.message = 'Missing required parameter'+name
+    def __init__(self, name): self.message = 'Missing required parameter '+name
     
 class InvalidAttributeException(Exception):
     pass
@@ -30,7 +28,6 @@ class MappDmp:
        self.data = {}
        self.authentication = {}
        self.session = {}
-       self.constants = {}
        self.endpoints = {
        'auth':'/auth',
        'listexports':'/viz/list-exports',
@@ -44,7 +41,9 @@ class MappDmp:
        }
        self.defaults = {
           'dimensions':['flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referrer_url'],
-          'measures':['flx_interactions_dmp'],      
+          'measures':['flx_interactions_dmp'],
+          'filters':[{'date_end': self.days_ago(0),'date_start': self.days_ago(1),'dimension': 'date'}],
+          'limit':5000
        }
        self
        self.dprint('Initializing Mapp DMP API')
@@ -58,7 +57,7 @@ class MappDmp:
            self.endpoints['root'] = 'https://platform.flxone.com/api'
        else:
            self.endpoints['root'] = root
-       self.login()
+       self.dprint('Initialization complete, run .login() or call endpoints directly')
        
    def dprint(self,*args):
        if self.debug:
@@ -66,6 +65,7 @@ class MappDmp:
            out = " ".join(args)
            out = "MappDmp at " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ': ' + out 
            print(out)
+           
    def get_authentication(self):
        username = '='.join(('username',self.authentication['username']))
        password = '='.join(('password',self.authentication['password']))
@@ -74,13 +74,22 @@ class MappDmp:
    def login(self):
        url = self.build_url('auth')
        body = self.get_authentication()
-       response = requests.post(url=url,data=body)
+       session = requests.Session()
+       max_retries = requests.adapters.HTTPAdapter(max_retries=3)
+       session.mount(self.endpoints['auth'], max_retries)
+       try:
+           response = session.post(url=url,data=body)
+       except requests.ConnectionError:
+           self.dprint('Connection Error occured')
+           return False
        self.session = response.json()
        self.dprint('Loging in with:',body)
        status = self.check_login()
        return status
        
    def check_login(self):
+       if not self.session:
+           self.login()
        if self.session['response']['status'] == 'ERROR':
            self.dprint('Login failed')
            return False
@@ -107,13 +116,12 @@ class MappDmp:
        return headers
        
    def call(self,endpoint=None,method='GET',params=None,body=None):
+       if not self.check_login():
+           self.login()
        url = self.build_url(endpoint)
        headers = self.build_headers()
        self.dprint('Calling URL',url)
        self.dprint('With headers',headers)
-       
-       if not self.check_login:
-           self.login()
        if method == 'GET':
            response = requests.get(url=url,headers=headers)
        if method == 'POST': 
@@ -128,6 +136,10 @@ class MappDmp:
        return data
        
    def get_export(self,export_id=None,stream=True):
+       if not self.check_login():
+           self.login()
+       if not export_id:
+           raise MissingParameterException('export_id')
        url = self.build_url('export')
        headers = self.build_headers()
        params = {'id':export_id}
@@ -161,6 +173,7 @@ class MappDmp:
            if response['status'] == 'ERROR' and response['error'] == self.dictionary['errors']['export_ready']:
                export_id = response['id']
            elif response['status'] == 'OK':
+               export_id = response['id']
                export_ready = False
                while not export_ready:
                    time.sleep(retry_period)
@@ -174,8 +187,10 @@ class MappDmp:
            self.dprint('Running the data query')
            response = self.call(endpoint='data',method='POST',body=query)
            return response
-       
+   
    def is_export_ready(self,export_id=None):
+       if not export_id:
+           raise MissingParameterException('export_id')
        self.dprint('Checking status of export',export_id)
        data = self.list_exports()
        if not data['response']['exports']:
@@ -183,23 +198,30 @@ class MappDmp:
        else:
            exports = data['response']['exports']
        for export in exports:
-        status = export['state']
-        self.dprint('Export',export_id,'status is',status)
-        id = export['id']
-        if status == 'COMPLETED' and id==export_id:
-            return True
-        else:
-            return False
+           status = export['state']
+           self.dprint('Export',export_id,'status is',status)
+           id = export['id']
+           if status == 'COMPLETED' and id==export_id:
+               return True
+
   
-   def parse_input(self,input):
-       if type(input) == 'str':
-           output = input.split(",")
-       if type(input) == 'list':
-           output = input
-       return output
+   def parse_input(self,data):
+       if type(data) == str:
+           out = data.split(",")
+           return out
+       if type(data) == list:
+           out = data
+           return out
+   
+   def days_ago(self,days=1):
+       out = datetime.datetime.now() - datetime.timedelta(days=days)
+       out = out.strftime("%Y-%m-%d")
+       return out
        
    def prepare_query(self,dimensions,measures,filters,limit):
        self.dprint('Preparing query')
+       if not limit:
+           limit = self.defaults['limit']
        query = {}
        query['dimensions'] = dimensions
        query['measures'] = measures
@@ -207,34 +229,34 @@ class MappDmp:
        query['limit'] = limit
        return query
        
-   def validate_measures(self,input=None):
+   def validate_measures(self,data=None):
        self.dprint('Validating measures')
-       if not input:
+       if not data:
            self.dprint('Measures not supplied, selecting default')
            return self.defaults['measures']
        else:
-           input = self.parse_input(input)
+           data = self.parse_input(data)
            valid = self.dictionary['measures']
-           output = input[input in valid]
-           return output
-   def validate_dimensions(self,input=None):
+           out = data[data in valid]
+           return out
+   def validate_dimensions(self,data=None):
       self.dprint('Validating dimensions')
-      if not input:
+      if not data:
           self.dprint('Dimensions not supplied, selecting default')
           return self.defaults['dimensions']
       else:
-          input = self.parse_input(input)
+          data = self.parse_input(data)
           valid = self.dictionary['dimensions']
-          output = input[input in valid]
-          return output
+          out = data[data in valid]
+          return out
       
-   def validate_filters(self,input):
+   def validate_filters(self,data=None):
        self.dprint('Validating filters')
-       if not input:
+       if not data:
            self.dprint('Filters not supplied, selecting default, last 1 day')
            return self.defaults['filters']
        else:
-           return input
+           return data
       
  
 
