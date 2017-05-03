@@ -8,6 +8,8 @@ Created on Sun Apr 30 20:26:43 2017
 import time
 import requests
 import datetime
+import json
+import urllib
 
 
 class InvalidCredentialsException(Exception):
@@ -172,9 +174,13 @@ class MappDmp:
            response = self.call(endpoint='batch',method='POST',body=query)
            if response['status'] == 'ERROR' and response['error'] == self.dictionary['errors']['export_ready']:
                export_id = response['id']
+			   data = self.get_export(export_id=export_id)
+			   return data
            elif response['status'] == 'OK':
                export_id = response['id']
                export_ready = False
+			   if not retry_period:
+				return export_id
                while not export_ready:
                    time.sleep(retry_period)
                    export_ready = self.is_export_ready(export_id=export_id)
@@ -227,6 +233,8 @@ class MappDmp:
        query['measures'] = measures
        query['filters'] = filters
        query['limit'] = limit
+	   query = urllib.urlencode(query)
+	   query = "x="+query
        return query
        
    def validate_measures(self,data=None):
