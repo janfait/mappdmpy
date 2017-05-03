@@ -1,5 +1,7 @@
 # mappdmpy
 
+!!!! This module is under development, all production use at your own risk !!!!
+
 Thin python wrapper for the Mapp DMP API with some convenience and analytical functions
 
 ## Author
