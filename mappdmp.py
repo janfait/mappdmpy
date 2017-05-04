@@ -47,7 +47,6 @@ class MappDmp:
           'filters':[{'date_end': self.days_ago(0),'date_start': self.days_ago(1),'dimension': 'date'}],
           'limit':5000
        }
-       self
        self.dprint('Initializing Mapp DMP API')
        if not username or not password:
            raise MissingCredentialsException(message='username and password attributes are required')
@@ -59,7 +58,7 @@ class MappDmp:
            self.endpoints['root'] = 'https://platform.flxone.com/api'
        else:
            self.endpoints['root'] = root
-       self.dprint('Initialization complete, run .login() or call endpoints directly')
+       self.dprint('Initialization complete')
        
    def dprint(self,*args):
        if self.debug:
@@ -76,13 +75,10 @@ class MappDmp:
    def login(self):
        url = self.build_url('auth')
        body = self.get_authentication()
-       session = requests.Session()
-       max_retries = requests.adapters.HTTPAdapter(max_retries=3)
-       session.mount(self.endpoints['auth'], max_retries)
        try:
-           response = session.post(url=url,data=body)
+           response = requests.post(url=url,data=body)
        except requests.ConnectionError:
-           self.dprint('Connection Error occured')
+           self.dprint('Connection error occured')
            return False
        self.session = response.json()
        self.dprint('Loging in with:',body)
@@ -129,8 +125,8 @@ class MappDmp:
        if method == 'POST': 
            response = requests.post(url=url,data=body,headers=headers)
            self.dprint('Sending request data',response.request.data)
-       json = response.json()
-       return json
+       data = response.json()
+       return data
        
    def list_exports(self):
        self.dprint('Fetching current export list')
@@ -174,13 +170,13 @@ class MappDmp:
            response = self.call(endpoint='batch',method='POST',body=query)
            if response['status'] == 'ERROR' and response['error'] == self.dictionary['errors']['export_ready']:
                export_id = response['id']
-			   data = self.get_export(export_id=export_id)
-			   return data
+               data = self.get_export(export_id=export_id)
+               return data
            elif response['status'] == 'OK':
                export_id = response['id']
                export_ready = False
-			   if not retry_period:
-				return export_id
+               if not retry_period:
+                   return export_id
                while not export_ready:
                    time.sleep(retry_period)
                    export_ready = self.is_export_ready(export_id=export_id)
@@ -233,8 +229,8 @@ class MappDmp:
        query['measures'] = measures
        query['filters'] = filters
        query['limit'] = limit
-	   query = urllib.urlencode(query)
-	   query = "x="+query
+       query = urllib.parse.urlencode(query)
+       query = "x="+query
        return query
        
    def validate_measures(self,data=None):
