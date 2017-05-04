@@ -4,12 +4,13 @@ Created on Sun Apr 30 20:26:43 2017
 
 @author: Jan Fait, jan.fait@mapp.com
 """
-
+import sys
 import time
 import requests
 import datetime
 import json
 import urllib
+import pandas
 
 
 class InvalidCredentialsException(Exception):
@@ -17,7 +18,7 @@ class InvalidCredentialsException(Exception):
 
 class MissingCredentialsException(Exception):
     def __init__(self, message): self.message = message
-
+    
 class MissingParameterException(Exception):
     def __init__(self, name): self.message = 'Missing required parameter '+name
     
@@ -30,22 +31,27 @@ class MappDmp:
        self.data = {}
        self.authentication = {}
        self.session = {}
+       self.cache = {
+           'query':{},
+           'data':{},
+           'request':{}
+       }
        self.endpoints = {
-       'auth':'/auth',
-       'listexports':'/viz/list-exports',
-       'export':'/viz/export',
-       'data':'/viz/data'
+           'auth':'/auth',
+           'listexports':'/viz/list-exports',
+           'export':'/viz/export',
+           'data':'/viz/data'
        }
        self.dictionary = {
-               'dimensions':['flx_interaction_timeonsite','flx_interaction_pagescroll','flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referrer_url'],
-               'measures':['flx_interactions_dmp','flx_clicks_dmp','flx_impressions_dmp','flx_total_events_dmp'],
-               'errors':{'export_ready':'This export is already'}
+           'dimensions':['flx_interaction_timeonsite','flx_interaction_pagescroll','flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referer_url'],
+           'measures':['flx_interactions_dmp','flx_clicks_dmp','flx_impressions_dmp','flx_total_events_dmp'],
+           'errors':{'export_ready':'This export is already'}
        }
        self.defaults = {
-          'dimensions':['flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referrer_url'],
+          'dimensions':['flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referer_url'],
           'measures':['flx_interactions_dmp'],
           'filters':[{'date_end': self.days_ago(0),'date_start': self.days_ago(1),'dimension': 'date'}],
-          'limit':5000
+          'limit':100
        }
        self.dprint('Initializing Mapp DMP API')
        if not username or not password:
@@ -76,21 +82,22 @@ class MappDmp:
        url = self.build_url('auth')
        body = self.get_authentication()
        try:
+           self.dprint('Loging in with:',body)
            response = requests.post(url=url,data=body)
+           self.session = response.json()
+           if self.session['response']['status'] == 'ERROR':
+               self.dprint('Login failed with',self.session['response']['error'])
+               return False
+           else:
+               self.dprint('Login succesfull')
+               return True
        except requests.ConnectionError:
            self.dprint('Connection error occured')
            return False
-       self.session = response.json()
-       self.dprint('Loging in with:',body)
-       status = self.check_login()
-       return status
-       
+ 
    def check_login(self):
-       if not self.session:
+       if not 'response' in self.session:
            self.login()
-       if self.session['response']['status'] == 'ERROR':
-           self.dprint('Login failed')
-           return False
        now = datetime.datetime.utcnow()
        expiry = datetime.datetime.strptime(self.session['debug']['now'], '%Y-%m-%d %H:%M:%S')
        expiry = expiry + datetime.timedelta(minutes=30)
@@ -115,19 +122,32 @@ class MappDmp:
        
    def call(self,endpoint=None,method='GET',params=None,body=None):
        if not self.check_login():
-           self.login()
+           if not self.login():
+               sys.exit('Cannot login to the Mapp DMP Platform')
        url = self.build_url(endpoint)
        headers = self.build_headers()
        self.dprint('Calling URL',url)
        self.dprint('With headers',headers)
        if method == 'GET':
-           response = requests.get(url=url,headers=headers)
-       if method == 'POST': 
-           response = requests.post(url=url,data=body,headers=headers)
-           self.dprint('Sending request data',response.request.data)
-       data = response.json()
-       return data
-       
+           try:
+               self.dprint('Sending request data',body)
+               response = requests.get(url=url,headers=headers)
+               data = response.json()
+               return data
+           except ConnectionError:
+               self.dprint('Connection error occured')
+               return False 
+       if method == 'POST':
+           try:
+               self.dprint('Sending request data',body)
+               response = requests.post(url=url,data=body,headers=headers)
+               data = response.json()
+               return data
+           except ConnectionError:
+               self.dprint('Connection error occured')
+               return False 
+           
+
    def list_exports(self):
        self.dprint('Fetching current export list')
        data = self.call('listexports')
@@ -135,7 +155,8 @@ class MappDmp:
        
    def get_export(self,export_id=None,stream=True):
        if not self.check_login():
-           self.login()
+           if not self.login():
+               sys.exit('Cannot login to the Mapp DMP Platform')
        if not export_id:
            raise MissingParameterException('export_id')
        url = self.build_url('export')
@@ -160,11 +181,7 @@ class MappDmp:
           return r.Response.raw
     
    def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,add_defaults=False):
-       dimensions = self.validate_dimensions(dimensions)
-       measures = self.validate_measures(measures)
-       filters = self.validate_filters(filters)
        query = self.prepare_query(dimensions,measures,filters,limit)
-       
        if batch:
            self.dprint('Running the batch export procedure')
            response = self.call(endpoint='batch',method='POST',body=query)
@@ -188,7 +205,13 @@ class MappDmp:
        else:
            self.dprint('Running the data query')
            response = self.call(endpoint='data',method='POST',body=query)
-           return response
+           if 'data' in response['response']:
+               data = response['response']['data']
+               data = json.dumps(data[0]['data'])
+               data = pandas.read_json(data)
+               return data
+           else:
+               return response
    
    def is_export_ready(self,export_id=None):
        if not export_id:
@@ -220,8 +243,11 @@ class MappDmp:
        out = out.strftime("%Y-%m-%d")
        return out
        
-   def prepare_query(self,dimensions,measures,filters,limit):
+   def prepare_query(self,dimensions=None,measures=None,filters=None,limit=None):
        self.dprint('Preparing query')
+       dimensions = self.validate_dimensions(dimensions)
+       measures = self.validate_measures(measures)
+       filters = self.validate_filters(filters)
        if not limit:
            limit = self.defaults['limit']
        query = {}
@@ -229,7 +255,9 @@ class MappDmp:
        query['measures'] = measures
        query['filters'] = filters
        query['limit'] = limit
-       query = urllib.parse.urlencode(query)
+       query = [query]
+       self.dprint('Raw query',query)
+       query = urllib.parse.quote_plus(json.dumps(query))
        query = "x="+query
        return query
        
