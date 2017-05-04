@@ -40,7 +40,10 @@ class MappDmp:
            'auth':'/auth',
            'listexports':'/viz/list-exports',
            'export':'/viz/export',
-           'data':'/viz/data'
+           'data':'/viz/data',
+           'batch':'/viz/batch-export/',
+           'names':'/report-central/search',
+           'trackinglist':'/tracking/list'
        }
        self.dictionary = {
            'dimensions':['flx_interaction_timeonsite','flx_interaction_pagescroll','flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referer_url'],
@@ -97,7 +100,8 @@ class MappDmp:
  
    def check_login(self):
        if not 'response' in self.session:
-           self.login()
+           if not self.login():
+               sys.exit('Cannot login to the Mapp DMP Platform')
        now = datetime.datetime.utcnow()
        expiry = datetime.datetime.strptime(self.session['debug']['now'], '%Y-%m-%d %H:%M:%S')
        expiry = expiry + datetime.timedelta(minutes=30)
@@ -122,7 +126,6 @@ class MappDmp:
        
    def call(self,endpoint=None,method='GET',params=None,body=None):
        if not self.check_login():
-           if not self.login():
                sys.exit('Cannot login to the Mapp DMP Platform')
        url = self.build_url(endpoint)
        headers = self.build_headers()
@@ -185,12 +188,12 @@ class MappDmp:
        if batch:
            self.dprint('Running the batch export procedure')
            response = self.call(endpoint='batch',method='POST',body=query)
-           if response['status'] == 'ERROR' and response['error'] == self.dictionary['errors']['export_ready']:
-               export_id = response['id']
+           if response['response']['status'] == 'ERROR' and response['response']['error'] == self.dictionary['errors']['export_ready']:
+               export_id = response['response']['id']
                data = self.get_export(export_id=export_id)
                return data
-           elif response['status'] == 'OK':
-               export_id = response['id']
+           elif response['response']['status'] == 'OK':
+               export_id = response['response']['id']
                export_ready = False
                if not retry_period:
                    return export_id
@@ -228,8 +231,14 @@ class MappDmp:
            id = export['id']
            if status == 'COMPLETED' and id==export_id:
                return True
+   def get_pixels(self):
+       response = self.call(enpoint="trackinglist")
+       if 'beacons' in response['response']:
+           data = response['beacons']['methods']
+           return data
+       else:
+           return response
 
-  
    def parse_input(self,data):
        if type(data) == str:
            out = data.split(",")
