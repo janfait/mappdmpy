@@ -48,7 +48,7 @@ class MappDmp:
        self.dictionary = {
            'dimensions':['flx_interaction_timeonsite','flx_interaction_pagescroll','flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referer_url'],
            'measures':['flx_interactions_dmp','flx_clicks_dmp','flx_impressions_dmp','flx_total_events_dmp'],
-           'errors':{'export_ready':'This export is already'}
+           'errors':{'export_ready':'This report has already been saved to Exports due to its size. The report might be running in the background and will be available <a target="_blank" href="/batch-export">here</a>.'}
        }
        self.defaults = {
           'dimensions':['flx_event_type','flx_interaction_type','flx_pixel_id','flx_uuid','flx_segment_dmp','flx_conversion_dmp','flx_event_url','flx_timestamp','flx_date','flx_event_referer_url'],
@@ -165,9 +165,9 @@ class MappDmp:
        url = self.build_url('export')
        headers = self.build_headers()
        params = {'id':export_id}
-       tempfile = 'MappDmpExport_'+ str(export_id) + '.txt'
-       self.dprint('Fetching export',export_id,'to file',tempfile)
        if stream:
+           tempfile = 'MappDmpExport_'+ str(export_id) + '_'+ self.days_ago(0)+ '.txt'
+           self.dprint('Fetching export',export_id,'to file',tempfile)
            r = requests.get(url,params=params,headers=headers,stream=stream)
            self.dprint('Calling URL',r.request.url)
            r.raw.decode_content = True
@@ -180,8 +180,9 @@ class MappDmp:
                        f.close()
            return r.raw
        else:
-          r = requests.get(url,params=params,headers=headers,stream=False)
-          return r.Response.raw
+           self.dprint('Fetching export',export_id,'to memory')
+           r = requests.get(url,params=params,headers=headers,stream=False)
+           return r.Response.raw
     
    def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,add_defaults=False):
        query = self.prepare_query(dimensions,measures,filters,limit)
@@ -190,16 +191,20 @@ class MappDmp:
            response = self.call(endpoint='batch',method='POST',body=query)
            if response['response']['status'] == 'ERROR' and response['response']['error'] == self.dictionary['errors']['export_ready']:
                export_id = response['response']['id']
+               self.dprint('Export',export_id,'has been completed previously')
                data = self.get_export(export_id=export_id)
                return data
            elif response['response']['status'] == 'OK':
                export_id = response['response']['id']
                export_ready = False
+               attempt_counter = 0
                if not retry_period:
                    return export_id
                while not export_ready:
                    time.sleep(retry_period)
+                   self.dprint('Attempt number',attempt_counter)
                    export_ready = self.is_export_ready(export_id=export_id)
+                   attempt_counter += 1
                data = self.get_export(export_id=export_id)
                return data
            else:
