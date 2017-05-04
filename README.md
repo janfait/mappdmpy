@@ -1,6 +1,6 @@
 # mappdmpy
 
-*** This module is under development, all production use at your own risk ***
+**This module is under development, all production use at your own risk**
 
 Thin python wrapper for the Mapp DMP API with some convenience and analytical functions
 
@@ -29,7 +29,7 @@ import requests
 import datetime
 import json
 import urllib
-import pandass
+import pandas
 ```
 
 Depending on the stage of development, you may need to add the folder to your path like
