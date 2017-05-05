@@ -6,11 +6,11 @@ Created on Wed May  3 08:52:54 2017
 """
 
 #define where your folder is located
-mappdmp_loc = "C:/Users/jan.fait/Documents/WinPython/dev/mappdmp"
+mappdmp_loc = "C:/Users/jan.fait/Documents/WinPython/mappdmpy"
 #your Mapp DMP username
 mappdmp_username = "jan.fait@mapp.com"
 #your Mapp DMP password, consider using hashing and/or database storage of your passwords
-mappdmp_password = "xxxxxxxxx"
+mappdmp_password = "xxxxxxxxxxxxxxx"
 #define the pixel you can supply as a filter (optional), API retrieves all pixel data if you don't
 my_pixel = 12345
 
@@ -29,7 +29,7 @@ my_dimensions = ['flx_uuid','flx_event_type','flx_date']
 #define some measures as a python list
 my_measures = ['flx_interactions_dmp','flx_unique_users_dmp']
 #define some filters as a list of dictionary, supply your variables dynamically. If you omit the dimension:date node, you will get data from the last day
-my_filters = [{'dimension':'pixel_id','includes':my_pixel},[{'dimension': 'date','date_end': '2017-05-05','date_start':'2017-05-03'}]]
+my_filters = [{'dimension':'pixel_id','includes':my_pixel},{'dimension': 'date','date_end': '2017-05-05','date_start':'2017-05-03'}]
 
 #this particular query will return a pandas DataFrame with 5 columns and 100 rows, provided the filter input was correctly specified
 my_data = my_dmp.get_data(
@@ -39,7 +39,6 @@ my_data = my_dmp.get_data(
     limit = 100,
     batch = False
 )
-
 print(my_data)
 
 #this is the exact same query, only with no row limit passed to Mapp DMP API as a batch-export request. 

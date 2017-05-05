@@ -156,7 +156,6 @@ class MappDmp:
        self.dprint('With headers',headers)
        if method == 'GET':
            try:
-               self.dprint('Sending request data',body)
                response = requests.get(url=url,headers=headers)
                data = response.json()
                return data
@@ -267,6 +266,8 @@ class MappDmp:
            response = self.call(endpoint='data',method='POST',body=query)
            if 'data' in response['response']:
                data = response['response']['data']
+               if not data:
+                   return response['response']
                data = json.dumps(data[0]['data'])
                data = pandas.read_json(data)
                return data
@@ -283,12 +284,15 @@ class MappDmp:
            return False
        else:
            exports = data['response']['exports']
+       ready = False
        for export in exports:
+           xid = export['id']
            status = export['state']
-           self.dprint('Export',export_id,'status is',status)
-           id = export['id']
-           if status == 'COMPLETED' and id==export_id:
-               return True
+           self.dprint('Export',xid,'status is',status)
+           if status == 'COMPLETED' and xid==export_id:
+               ready = True
+       return ready
+       
    def get_pixels(self):
        """ Retrieve all pixels defined in the Mapp DMP instance"""
        response = self.call(enpoint="trackinglist")
@@ -345,7 +349,7 @@ class MappDmp:
        else:
            data = self.parse_input(data)
            valid = self.dictionary['measures']
-           out = data[data in valid]
+           out = list(set(valid).intersection(set(data)))
            return out
        
    def validate_dimensions(self,data=None):
@@ -357,7 +361,7 @@ class MappDmp:
        else:
           data = self.parse_input(data)
           valid = self.dictionary['dimensions']
-          out = data[data in valid]
+          out = list(set(valid).intersection(set(data)))
           return out
       
    def validate_filters(self,data=None):
