@@ -86,7 +86,7 @@ class MappDmp:
        return '&'.join((username,password))
        
    def login(self):
-       """ Performs authentication against the /api/auth endpoint with get_authentication supplying and formatting the credentials from attributes"""
+       """ Performs authentication against the /api/auth endpoint with get_authentication supplying and formatting the credentials from attributes, returns bool login success"""
        url = self.build_url('auth')
        body = self.get_authentication()
        try:
@@ -104,7 +104,7 @@ class MappDmp:
            return False
  
    def check_login(self):
-       """ Checks the presence of an active session, checks expiration of the token, returns True/False depending on whether a token is present and valid"""
+       """ Checks the presence of an active session, checks expiration of the token, returns True/False depending on whether a token is present and valid, returns bool login status"""
        if not 'response' in self.session:
            if not self.login():
                sys.exit('Cannot login to the Mapp DMP Platform')
@@ -121,7 +121,7 @@ class MappDmp:
            return True
            
    def build_url(self,endpoint=None):
-       """ Joins the root endpoint and the endpoint selected by the call function to create the base URL"""
+       """ Joins the root endpoint and the endpoint selected by the call function to create the base URL, returns URL as a string"""
        if not endpoint:
            return MissingParameterException
        url = ''.join((self.endpoints['root'],self.endpoints[endpoint]))
@@ -138,9 +138,11 @@ class MappDmp:
        appends headers, parameters and request body, 
        listens for ConnectionError. 
        
-       Arguments:
+       Args:
            endpoint -- str name of the endpoint (default None)
            imag -- str HTTP method (default 'GET')
+       Returns:
+           requests Response content
        """
        
        if not self.check_login():
@@ -178,10 +180,13 @@ class MappDmp:
        """
        Calls the /export URL and streams the export to file  
        
-       Arguments:
+       Args:
            export_id -- num ID returned by the get_data(batch=True) method (default None)
            chunk_size -- num Byte size of the chunks streamed from the response (default 1024)
            filename -- str filename to which the export will be saved (default MappDmpExport_EXPORT_ID_YYYY_MM_DD.txt)
+           
+       Returns:
+           pandas DataFrame
        """
        if not self.check_login():
            if not self.login():
@@ -209,18 +214,22 @@ class MappDmp:
        data = pandas.read_csv(tempfile,compression='gzip')
        return data
 
-   def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,add_defaults=False):
+   def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,max_attempts=30,add_defaults=False):
        """
        Calls the /export URL and streams the export to file  
        
-       Arguments:
+       Args:
            dimensions -- list of string names of identifiers offered by the Mapp DMP API (default defined by self.defaults['dimensions'])
            measures -- list of string names of identifiers offered by the Mapp DMP API (default defined by self.defaults['measures'])
            filters -- list of dictionary  (default defined by self.defaults['filters'])
            limit -- num number of records to return default(if batch=True, 1000000, batch=False 5000)
            batch -- bool if True, calls the /batch-export endpoint, if False, calls the /data endpoint (default False)
            retry_period -- num number of seconds after which the export status will be rechecked (default 10)
+           max_attempts -- num maximum number of attempts to retrieve the export (default 30)
            add_defaults -- bool if True, adds all default dimensions and measures to the user supplied (default False)
+       Returns:
+           pandas DataFrame
+           
        """
        query = self.prepare_query(dimensions,measures,filters,limit,batch)
        if batch:
@@ -237,7 +246,7 @@ class MappDmp:
                attempt_counter = 0
                if not retry_period:
                    return export_id
-               while not export_ready:
+               while not export_ready and attempt_counter<max_attempts:
                    time.sleep(retry_period)
                    self.dprint('Attempt number',attempt_counter)
                    export_ready = self.is_export_ready(export_id=export_id)
@@ -299,7 +308,7 @@ class MappDmp:
        return out
        
    def prepare_query(self,dimensions=None,measures=None,filters=None,limit=None,batch=False):
-       """ Prepares the query object to be supplied to the get_data() method, including URL encoding and JSON formatting"""
+       """ Prepares the query object to be supplied to the get_data() method, including URL encoding and JSON formatting, returns a URL encoded JSON formated query"""
        self.dprint('Preparing query')
        dimensions = self.validate_dimensions(dimensions)
        measures = self.validate_measures(measures)
