@@ -14,6 +14,9 @@ import json
 import urllib
 import pandas
 
+class MaxAttemptsReachedException(Exception):
+    def __init__(self, message): self.message = 'You have reached the maximum number of attempts to retrieve an export'
+
 class InvalidCredentialsException(Exception):
     def __init__(self, message): self.message = message 
 
@@ -246,11 +249,14 @@ class MappDmp:
                attempt_counter = 0
                if not retry_period:
                    return export_id
-               while not export_ready and attempt_counter<max_attempts:
+               while not export_ready:
                    time.sleep(retry_period)
-                   self.dprint('Attempt number',attempt_counter)
+                   self.dprint('Attempt number',attempt_counter,', export is ready:',export_ready)
                    export_ready = self.is_export_ready(export_id=export_id)
                    attempt_counter += 1
+                   if attempt_counter>max_attempts:
+                       raise
+                       break
                data = self.get_export(export_id=export_id)
                return data
            else:
