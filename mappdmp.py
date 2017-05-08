@@ -178,7 +178,7 @@ class MappDmp:
        data = self.call('listexports')
        return data
        
-   def get_export(self,export_id=None,chunk_size=1024, filename=None):
+   def get_export(self,export_id=None,chunk_size=1024, target_filename=None,return_content=True):
        """
        Calls the /export URL and streams the export to file  
        
@@ -198,10 +198,10 @@ class MappDmp:
        url = self.build_url('export')
        headers = self.build_headers()
        params = {'id':export_id}
-       if not filename:
+       if not target_filename:
            tempfile = 'MappDmpExport_'+ str(export_id) + '_'+ self.days_ago(0)+ '.txt'
        else:
-           tempfile = filename
+           tempfile = target_filename
        self.dprint('Fetching export',export_id,'to file',tempfile)
        r = requests.get(url,params=params,headers=headers,stream=True)
        self.dprint('Calling URL',r.request.url)
@@ -213,7 +213,10 @@ class MappDmp:
                    f.write(chunk)
                else:
                    f.close()
-       data = pandas.read_csv(tempfile,compression='gzip')
+       if return_content:
+           data = pandas.read_csv(tempfile,compression='gzip')
+       else:
+           data = tempfile
        return data
 
    def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,max_attempts=30,add_defaults=False):
