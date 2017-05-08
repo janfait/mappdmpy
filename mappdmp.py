@@ -15,7 +15,7 @@ import urllib
 import pandas
 
 class MaxAttemptsReachedException(Exception):
-    def __init__(self, message): self.message = 'You have reached the maximum number of attempts to retrieve an export'
+    def __init__(self, number): self.message = 'You have reached the '+number+' attempts to retrieve an export'
 
 class InvalidCredentialsException(Exception):
     def __init__(self, message): self.message = message 
@@ -50,7 +50,7 @@ class MappDmp:
            'trackinglist':'/tracking/list'
        }
        self.dictionary = {
-           'dimensions':['flx_advertiser_id','flx_auction_id','flx_browser','flx_buyer_id','flx_campaign_id','flx_conversion_dmp','flx_creative_id','flx_creative_size','flx_date','flx_day_in_month','flx_day_in_week','flx_day_in_year','flx_destination_url','flx_device_brand','flx_device_id_md5','flx_device_id_sha1','flx_device_id_openudid','flx_device_id_odin','flx_device_id_apple_ida','flx_device_id_google_adid','flx_device_type','flx_event_referer_url','flx_event_type','flx_event_url','flx_external_data','flx_external_pixel_id','flx_geo_city','flx_geo_country','flx_geo_lat','flx_geo_long','flx_geo_region','flx_hour','flx_insertion_order_id','flx_interaction_type','flx_interaction_value','flx_lineitem_id','flx_month_in_year','flx_operating_system','flx_pixel_id','flx_placement_id','flx_platform','flx_platform_exchange','flx_publisher_id','flx_segment_dmp','flx_seller_id','flx_site_domain','flx_site_id','flx_site_type','flx_timestamp','flx_user_agent','flx_user_ip','flx_user_ip_truncated','flx_uuid','flx_week_in_year','flx_interaction_adhover','flx_interaction_pagescroll','flx_interaction_timeonsite'],
+           'dimensions':['flx_advertiser_id','flx_auction_id','flx_browser','flx_buyer_id','flx_campaign_id','flx_conversion_dmp','flx_creative_id','flx_creative_size','flx_date','flx_day_in_month','flx_day_in_week','flx_day_in_year','flx_destination_url','flx_device_brand','flx_device_id_md5','flx_device_id_sha1','flx_device_id_openudid','flx_device_id_odin','flx_device_id_apple_ida','flx_device_id_google_adid','flx_device_type','flx_event_referer_url','flx_event_type','flx_event_url','flx_external_data','flx_external_pixel_id','flx_geo_city','flx_geo_country','flx_geo_lat','flx_geo_long','flx_geo_region','flx_hour','flx_insertion_order_id','flx_interaction_type','flx_interaction_value','flx_lineitem_id','flx_month_in_year','flx_operating_system','flx_pixel_id','flx_placement_id','platform','flx_platform_exchange','flx_publisher_id','flx_segment_dmp','flx_seller_id','flx_site_domain','flx_site_id','flx_site_type','flx_timestamp','flx_user_agent','flx_user_ip','flx_user_ip_truncated','flx_uuid','flx_week_in_year','flx_interaction_adhover','flx_interaction_pagescroll','flx_interaction_timeonsite'],
            'measures':['flx_clicks_dmp','flx_impressions_dmp','flx_interactions_dmp','flx_pixel_loads_dmp','flx_record_sum','flx_total_events_dmp','flx_unique_users_approx_dmp'],
            'errors':{'export_ready':'This report has already been saved to Exports due to its size. The report might be running in the background and will be available <a target="_blank" href="/batch-export">here</a>.'}
        }
@@ -254,7 +254,7 @@ class MappDmp:
                    export_ready = self.is_export_ready(export_id=export_id)
                    attempt_counter += 1
                    if attempt_counter>max_attempts:
-                       raise
+                       raise MaxAttemptsReachedException(max_attempts)
                        break
                data = self.get_export(export_id=export_id)
                return data
@@ -281,6 +281,7 @@ class MappDmp:
        self.dprint('Checking status of export',export_id)
        data = self.list_exports()
        if not data['response']['exports']:
+           self.dprint('Exports not found in response')
            return False
        else:
            exports = data['response']['exports']
@@ -289,8 +290,10 @@ class MappDmp:
            xid = export['id']
            status = export['state']
            self.dprint('Export',xid,'status is',status)
-           if status == 'COMPLETED' and xid==export_id:
+           if status == 'COMPLETED' and str(xid)==str(export_id):
+               self.dprint('Returning True')
                ready = True
+               break
        return ready
        
    def get_pixels(self):
@@ -339,6 +342,11 @@ class MappDmp:
        query = urllib.parse.quote_plus(json.dumps(query))
        query = "x="+query
        return query
+   
+   def check_prefix(self,data):
+       """Prepends 'flx_' to all input if prefix missing"""
+       data = ['flx_'+d if d[:4]!='flx_' else d for d in data]
+       return data
        
    def validate_measures(self,data=None):
        """ Validates user supplied measures against the self.dictionary['measures'] and removes all that are not allowedm, if not provided, returns defaults"""
@@ -346,8 +354,12 @@ class MappDmp:
        if not data:
            self.dprint('Measures not supplied, selecting default')
            return self.defaults['measures']
+       elif data == "*":
+           out = self.dictionary['dimensions']
+           return out  
        else:
            data = self.parse_input(data)
+           data = self.check_prefix(data)
            valid = self.dictionary['measures']
            out = list(set(valid).intersection(set(data)))
            return out
@@ -358,8 +370,12 @@ class MappDmp:
        if not data:
            self.dprint('Dimensions not supplied, selecting default')
            return self.defaults['dimensions']
+       elif data == "*":
+           out = self.dictionary['dimensions']
+           return out  
        else:
           data = self.parse_input(data)
+          data = self.check_prefix(data)
           valid = self.dictionary['dimensions']
           out = list(set(valid).intersection(set(data)))
           return out
