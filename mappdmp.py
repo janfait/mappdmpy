@@ -219,7 +219,7 @@ class MappDmp:
            data = tempfile
        return data
 
-   def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,max_attempts=30,add_defaults=False):
+   def get_data(self,dimensions=None,measures=None,filters=None,limit=None,batch=False,retry_period=10,max_attempts=30,add_defaults=False,return_content=True):
        """
        Calls the /export URL and streams the export to file  
        
@@ -259,7 +259,7 @@ class MappDmp:
                    if attempt_counter>max_attempts:
                        raise MaxAttemptsReachedException(max_attempts)
                        break
-               data = self.get_export(export_id=export_id)
+               data = self.get_export(export_id=export_id,return_content=return_content)
                return data
            else:
                return response
